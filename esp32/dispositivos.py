@@ -217,7 +217,7 @@ class CajaDeActuadores:
     VOLUMEN_INICIAL = 15
 
     def __init__(self, pin_led_r=25, pin_led_g=26, pin_led_b=27,
-                 pin_ventilador=32, pin_uart_tx=17, pin_uart_rx=16):
+                 pin_ventilador=32, pin_uart_tx=13, pin_uart_rx=14):
         # ── LED RGB: indicador visual de estado (PWM para control de brillo)
         self._led_rojo  = PWM(Pin(pin_led_r), freq=1000)
         self._led_verde = PWM(Pin(pin_led_g), freq=1000)
