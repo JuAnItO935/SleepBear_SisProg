@@ -37,9 +37,8 @@ class CajaDeSensores:
         # ── Sensor DHT11: temperatura y humedad del cuarto
         self._dht11 = dht.DHT11(Pin(pin_dht))
 
-        # ── Sensor LDR: nivel de luz del cuarto (entrada analógica)
-        self._ldr = ADC(Pin(pin_ldr))
-        self._ldr.atten(ADC.ATTN_11DB)  # Rango completo: 0 a 3.3V
+        # ── Sensor LDR: nivel de luz del cuarto (entrada digital)
+        self._ldr = Pin(pin_ldr, Pin.IN)
 
         # ── Sensor KY-038: micrófono para detección de llanto del bebé      
         self._mic_digital  = Pin(pin_microfono_do, Pin.IN)	#    DO  → salida digital (umbral ajustable con potenciómetro en la placa)
@@ -49,7 +48,6 @@ class CajaDeSensores:
         # ── Buffers internos para promedios móviles
         self._buffer_temp_bebe   = []
         self._buffer_temp_cuarto = []
-        self._buffer_luz         = []
         self._buffer_sonido		 = []
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -121,19 +119,16 @@ class CajaDeSensores:
 
     def obtener_nivel_luz(self):
         # Parámetros: ninguno
-        # Acción:     Lee el valor analógico del sensor LDR y lo convierte
-        #             a un porcentaje de luminosidad de 0 (oscuro) a 100 (muy iluminado).
-        #             Aplica promedio móvil para estabilizar la lectura.
-        # Devuelve:   Nivel de luz de 0 a 100 (float)
-        valor_crudo = self._ldr.read()
-        porcentaje  = round((valor_crudo / 4095) * 100, 1)
-        return self._promedio_movil(self._buffer_luz, porcentaje)
+        # Acción:     Lee la salida digital del LDR.
+        # Devuelve:   1 si hay luz, 0 si está oscuro (int)
+        return self._ldr.value()
 
-    def esta_oscuro(self, umbral=20):
-        # Parámetros: umbral (porcentaje de luz por debajo del cual es de noche, default 20)
-        # Acción:     Compara el nivel de luz actual con el umbral configurado.
+    def esta_oscuro(self):
+        # Parámetros: ninguno
+        # Acción:     Lee la salida digital del LDR.
+        #             Devuelve True si está oscuro (señal en bajo), False si hay luz.
         # Devuelve:   True si el cuarto está oscuro, False si hay luz suficiente
-        return self.obtener_nivel_luz() < umbral
+        return self._ldr.value() == 0
 
     def hay_fiebre(self, umbral=38.0):
         # Parámetros: umbral (temperatura en °C considerada como fiebre, default 38.0)
