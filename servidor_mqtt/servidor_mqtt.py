@@ -41,8 +41,7 @@ BROKER_PORT = 1883
 CLIENT_ID   = "sleepbear-servidor-python"
 
 # ── Firebase Realtime Database ────────────────────────────────────────────────
-FIREBASE_URL = os.getenv("FIREBASE_URL")   # ej: https://proyecto-default-rtdb.firebaseio.com
-
+FIREBASE_URL = https://sistemas-programables-9fd09-default-rtdb.firebaseio.com/
 # ── Tópicos de sensores que publica la ESP32 ─────────────────────────────────
 TOPICOS_SENSORES = [
     "sleepbear/sensores/temp_bebe",
