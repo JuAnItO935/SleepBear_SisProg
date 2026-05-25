@@ -30,7 +30,7 @@ class CajaDeSensores:
     TAMANO_BUFFER = 5
 
     def __init__(self, pin_dht=4, pin_ldr=34, pin_sda=21, pin_scl=22,
-                 pin_microfono_do=35, pin_microfono_ao=36):
+                 pin_microfono_do=35, pin_microfono_ao=32):
         # ── Sensor MLX90614: temperatura sin contacto del bebé (I2C)
         self._i2c = I2C(0, sda=Pin(pin_sda), scl=Pin(pin_scl), freq=100000)
 
