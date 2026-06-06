@@ -136,7 +136,11 @@ def on_comando(topic, payload):
         elif t == "sleepbear/comando/audio/01":
             accion = cmd.get("accion", "")
             if accion == "reproducir":
-                actuadores.reproducir_musica_cuna(cmd.get("pista", 1))
+                # ¡SOLO REPRODUCE SI NO ESTÁ ACTIVA YA!
+                if not actuadores._musica_activa: 
+                    actuadores.reproducir_musica_cuna(cmd.get("pista", 1))
+                else:
+                    print("[AUDIO] La pista ya se está reproduciendo, ignorando duplicado.")
             elif accion == "detener":
                 actuadores.detener_musica()
             elif accion == "volumen":

@@ -1,58 +1,60 @@
 """
-OBJETIVO: Validación estática del modelo de detección de postura del bebé
-          usando OpenCV antes de la integración con el flujo MQTT.
+OBJETIVO: Validación estática del modelo de detección de postura del bebé.
+          Prueba detector_postura.py con imágenes locales ANTES de
+          integrar con el flujo MQTT, garantizando funcionamiento aislado.
 INTEGRANTES: Aragón Guerrero Jacziry Berenice - 21240179
-             Cortez Iñiguez Juan José - 21240173
-PROYECTO: SleepBear - Sistema de Monitoreo Nocturno para Bebés
+PROYECTO: SleepBear - Sistema Inteligente de Monitoreo Nocturno para Bebés
 """
-
-# Modelo: Detección de postura (boca arriba / boca abajo) mediante análisis
-# de contornos y relación de aspecto con OpenCV.
-# Precisión aproximada en pruebas estáticas: 80-85% en condiciones de luz normal.
+# Modelo: Detección de contornos + relación de aspecto (OpenCV)
+# Precisión en prueba estática: ~80-85%
 
 import cv2
-import numpy as np
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from detector_postura import detectar_postura, anotar_frame
 
-def detectar_postura_bebe(frame):
-    """
-    Analiza un frame y determina si el bebé está boca arriba (seguro)
-    o boca abajo (posición de riesgo SMSL).
-    Retorna: "SEGURO", "RIESGO" o "INDETERMINADO"
-    """
-    gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gris, (21, 21), 0)
-    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+# Lista de imágenes de prueba
+# Agrega tus propias imágenes a la carpeta evidencias/
+IMAGENES = [
+    ("../evidencias/bebe_prueba.jpg", "SEGURO"),
+    ("../evidencias/bebe_prueba2.jpg", "RIESGO"),
+    ("../evidencias/bebe_prueba3.jpg", "RIESGO"),
+    ("../evidencias/bebe_prueba4.jpg", "RIESGO")
+]
 
-    contornos, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contornos:
-        return "INDETERMINADO"
+def ejecutar():
+    print("=" * 50)
+    print("  SleepBear — Prueba Estática del Modelo")
+    print("=" * 50)
+    aciertos, total = 0, 0
 
-    # Tomar el contorno más grande (el bebé)
-    c = max(contornos, key=cv2.contourArea)
-    x, y, w, h = cv2.boundingRect(c)
-    relacion = w / h if h > 0 else 0
+    for ruta, esperado in IMAGENES:
+        frame = cv2.imread(ruta)
+        if frame is None:
+            print(f"[SKIP] No encontrado: {ruta}")
+            print("       Pon una imagen en evidencias/bebe_prueba3.jpg")
+            continue
 
-    # Si es más ancho que alto → acostado boca arriba (seguro)
-    # Si es más alto que ancho → enrollado / boca abajo (riesgo)
-    if relacion > 1.3:
-        return "SEGURO"
-    elif relacion < 0.8:
-        return "RIESGO"
+        total    += 1
+        resultado = detectar_postura(frame)
+        correcto  = resultado == esperado
+        if correcto: aciertos += 1
+
+        print(f"Imagen:   {ruta}")
+        print(f"Esperado: {esperado}")
+        print(f"Obtenido: {resultado}  {"✓" if correcto else "✗"}")
+
+        # Guardar imagen con el resultado anotado
+        salida = ruta.replace(".jpg", "_resultado.jpg")
+        cv2.imwrite(salida, anotar_frame(frame.copy(), resultado))
+        print(f"Guardado: {salida}")
+        print("-" * 40)
+
+    if total > 0:
+        print(f"Precisión: {aciertos}/{total} = {aciertos/total*100:.1f}%")
     else:
-        return "INDETERMINADO"
+        print("Agrega imágenes a evidencias/ para correr la prueba")
 
-# --- Prueba con imagen local ---
 if __name__ == "__main__":
-    # Cambia esta ruta a una imagen de prueba tuya
-    ruta = "evidencia/bebe_prueba.jpg"
-    frame = cv2.imread(ruta)
-    if frame is None:
-        print("[ERROR] No se encontró la imagen de prueba.")
-    else:
-        resultado = detectar_postura_bebe(frame)
-        print(f"[PRUEBA ESTÁTICA] Postura detectada: {resultado}")
-        cv2.putText(frame, resultado, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1,
-                    (0, 255, 0) if resultado == "SEGURO" else (0, 0, 255), 2)
-        cv2.imshow("Resultado", frame)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    ejecutar()

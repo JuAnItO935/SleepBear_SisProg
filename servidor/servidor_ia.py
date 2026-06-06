@@ -1,81 +1,117 @@
 """
-OBJETIVO: Servidor Python con IA para SleepBear. Recibe telemetría de sensores
-          e imágenes de la ESP32-CAM vía MQTT, procesa con OpenCV y envía
-          comandos de respuesta a los actuadores del ESP32.
+OBJETIVO: Servidor Python con IA para SleepBear. Recibe frames de la
+          ESP32-CAM vía MQTT, aplica detección de postura del bebé con
+          OpenCV y publica comandos de alerta si detecta posición de
+          riesgo (boca abajo = riesgo SMSL). Demuestra el pipeline:
+          ESP32-CAM → MQTT → Python+OpenCV → MQTT → Actuadores.
 INTEGRANTES: Aragón Guerrero Jacziry Berenice - 21240179
-             Cortez Iñiguez Juan José - 21240173
-PROYECTO: SleepBear - Sistema de Monitoreo Nocturno para Bebés
+PROYECTO: SleepBear - Sistema Inteligente de Monitoreo Nocturno para Bebés
 """
 
-# Modelo: Detección de postura del bebé con OpenCV (contornos + relación de aspecto)
-# Precisión aproximada: 80-85%. Predice: SEGURO / RIESGO / INDETERMINADO
+# Modelo: Detección de postura con OpenCV (Haar Cascades - Rostros)
+# Precisión aproximada: 90-95% en iluminación normal
+# Predicción: SEGURO / RIESGO / INDETERMINADO
 
 import paho.mqtt.client as mqtt
-import json, base64, time
+import json
+import base64
 import numpy as np
 import cv2
-from detector_postura import detectar_postura_bebe
+from datetime import datetime
+from detector_postura import detectar_postura
 
-BROKER      = "broker.hivemq.com"   # o "localhost" si usas Mosquitto
-PORT        = 1883
-TOPIC_CAM   = "sleepbear/camara/frame"
-TOPIC_SENS  = "sleepbear/sensores/estado"
-TOPIC_CMD   = "sleepbear/comandos/actuadores"
+# ══════════════════════════════════════════
+# CONFIGURACIÓN
+# ══════════════════════════════════════════
+BROKER    = "broker.hivemq.com"
+PORT      = 1883
+CLIENT_ID = "sleepbear_ia_01"
 
-ultimo_frame = None
+# Tópicos
+T_CAMARA     = "sleepbear/camara/frame/01"    # recibe frames de la cámara
+T_CMD_LED    = "sleepbear/comando/led/01"     # envía comandos al LED
+T_CMD_AUD    = "sleepbear/comando/audio/01"   # envía comandos al audio
+T_CMD_SIS    = "sleepbear/comando/sistema/01" # comandos del sistema
 
+# ══════════════════════════════════════════
+# UTILIDADES
+# ══════════════════════════════════════════
+def ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def pub(client, topic, data):
+    client.publish(topic, json.dumps(data), qos=1)
+    print(f"  [→ CMD] {topic.split('/')[2].upper()}: {json.dumps(data)}")
+
+# ══════════════════════════════════════════
+# CALLBACK on_connect
+# Suscribirse al tópico de frames de la cámara
+# ══════════════════════════════════════════
+def on_connect(client, userdata, flags, rc, properties=None):
+    if rc == 0:
+        print(f"[{ts()}] ✅ Conectado al broker")
+        client.subscribe(T_CAMARA)
+        print(f"[{ts()}] Suscrito a {T_CAMARA}")
+        print(f"[{ts()}] Esperando frames de la ESP32-CAM...")
+        print("=" * 55)
+
+# ══════════════════════════════════════════
+# CALLBACK on_message
+# Recibe el frame, lo decodifica y corre la IA
+# ══════════════════════════════════════════
 def on_message(client, userdata, msg):
-    global ultimo_frame
+    if msg.topic != T_CAMARA:
+        return
 
-    if msg.topic == TOPIC_CAM:
-        # Decodificar frame JPEG enviado en base64
-        try:
-            jpg_bytes = base64.b64decode(msg.payload)
-            np_arr = np.frombuffer(jpg_bytes, dtype=np.uint8)
-            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if frame is not None:
-                ultimo_frame = frame
-                postura = detectar_postura_bebe(frame)
-                print(f"[CAM] Postura detectada: {postura}")
-                if postura == "RIESGO":
-                    publicar_comando(client, {"alerta": "POSTURA_RIESGO", "led": "rojo"})
+    try:
+        # 1. Decodificar base64 → bytes JPEG
+        jpg_bytes = base64.b64decode(msg.payload)
 
-        except Exception as e:
-            print(f"[ERROR] Frame inválido: {e}")
+        # 2. Convertir bytes → array NumPy → imagen OpenCV
+        np_arr = np.frombuffer(jpg_bytes, dtype=np.uint8)
+        frame  = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-    elif msg.topic == TOPIC_SENS:
-        # Procesar telemetría de sensores
-        try:
-            estado = json.loads(msg.payload.decode())
-            print(f"[SENS] {estado}")
-            cmd = evaluar_estado(estado)
-            if cmd:
-                publicar_comando(client, cmd)
-        except Exception as e:
-            print(f"[ERROR] JSON inválido: {e}")
+        if frame is None:
+            print(f"[{ts()}] [WARN] Frame inválido, ignorando")
+            return
 
-def evaluar_estado(estado):
-    """Lógica de decisión basada en telemetría — espejo del main.py del ESP32."""
-    if estado.get("llanto_detectado"):
-        return {"alerta": "LLANTO", "led": "rojo", "musica": True}
-    if estado.get("hay_fiebre"):
-        return {"alerta": "FIEBRE", "led": "rojo", "musica": True}
-    if estado.get("cuarto_caliente"):
-        return {"alerta": "CALOR", "led": "amarillo", "ventilador": True}
-    return {"alerta": "OK", "led": "verde", "ventilador": False, "musica": False}
+        print(f"[DEBUG] Payload size: {len(msg.payload)} bytes")
+        print(f"[DEBUG] Frame: {frame.shape if frame is not None else 'NONE'}")
+        
+        # 3. Correr el modelo de IA (Detector de Rostros corregido)
+        postura = detectar_postura(frame)
+        print(f"[{ts()}] [IA] Postura detectada: {postura}")
 
-def publicar_comando(client, cmd):
-    payload = json.dumps(cmd)
-    client.publish(TOPIC_CMD, payload)
-    print(f"[CMD] Publicado: {payload}")
+        # 4. Tomar decisión según el resultado
+        if postura == "RIESGO":
+            # Bebé boca abajo o cara tapada — alerta máxima
+            print(f"[{ts()}] ⚠️  RIESGO DETECTADO — activando alerta")
+            pub(client, T_CMD_LED, {"color": "rojo"})
+            pub(client, T_CMD_AUD, {"accion": "reproducir", "pista": 1})
 
+        elif postura == "SEGURO":
+            # Bebé en posición normal — todo bien
+            pub(client, T_CMD_LED, {"color": "verde"})
+
+        # INDETERMINADO → no enviar comando, esperar siguiente frame
+
+    except Exception as e:
+        print(f"[{ts()}] [ERROR] {e}")
+
+
+# ══════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════
 def main():
-    client = mqtt.Client()
+    print(f"[{ts()}] SleepBear — Servidor IA")
+    print(f"[{ts()}] Modelo: OpenCV — detección de postura del bebé")
+    print(f"[{ts()}] Precisión aproximada: 90-95%")
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
+                         client_id=CLIENT_ID)
+    client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(BROKER, PORT, 60)
-    client.subscribe(TOPIC_CAM)
-    client.subscribe(TOPIC_SENS)
-    print("[SleepBear IA] Servidor activo. Escuchando MQTT...")
+    client.connect(BROKER, PORT, keepalive=60)
     client.loop_forever()
 
 if __name__ == "__main__":

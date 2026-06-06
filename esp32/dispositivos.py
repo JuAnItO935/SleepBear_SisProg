@@ -291,6 +291,8 @@ class CajaDeActuadores:
         # Acción:     Envía el comando de reproducción al DFPlayer Mini
         #             para reproducir la pista de música de cuna indicada.
         # Devuelve:   nada
+        self.ajustar_volumen(20) 
+        time.sleep_ms(100) # Un pequeño respiro para la UART
         self._enviar_comando_dfplayer(0x03, numero_pista)
         self._musica_activa = True
 

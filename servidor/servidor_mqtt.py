@@ -114,7 +114,7 @@ def tomar_decision(client, estado):
 # al broker MQTT. Aquí se suscriben los tópicos de telemetría
 # usando comodín # para capturar todos los subtópicos.
 # =========================================================
-def on_connect(client, userdata, flags, rc):
+def on_connect(client, userdata, flags, rc, properties=None):
     """
     Callback de conexión al broker.
     Suscribe a sleepbear/# para recibir toda la telemetría del ESP32.
