@@ -397,12 +397,30 @@ def iniciar_sistema():
                 print("[MQTT] Reintento fallido, esperando 10s...")
                 time.sleep(10)
 
-        # ── TAREA 2: publicar sensores por MQTT ──────────────
+        # ── TAREA 2: publicar sensores + decisiones locales ──
         if time.ticks_diff(ahora, ultimo_mqtt) >= INTERVALO_MQTT:
             try:
                 estado = sensores.obtener_estado_completo()
                 publicar_sensores_mqtt(estado)
                 ultimo_mqtt = ahora
+
+                # Decisiones locales sin depender del servidor de IA
+                if estado["llanto_detectado"]:
+                    print("[DECISION] LLANTO — musica de cuna")
+                    actuadores.calmar_llanto()
+                else:
+                    if actuadores._musica_activa:
+                        actuadores.detener_musica()
+                    actuadores.indicar_todo_bien()
+
+                if estado["hay_fiebre"]:
+                    actuadores.activar_alerta_fiebre()
+
+                if estado["cuarto_caliente"]:
+                    actuadores.activar_ventilador()
+                else:
+                    actuadores.desactivar_ventilador()
+
             except OSError as e:
                 print("[MQTT] Error al publicar:", e)
 

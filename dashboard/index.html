@@ -1,8 +1,9 @@
 <!--
 OBJETIVO: Gestión de Firebase y Dashboard de usuario.
-          Interfaz web para SleepBear. Muestra estado online/offline,
-          última lectura de todos los sensores, historial de últimas 5
-          alertas y permite controlar actuadores físicos remotamente.
+          Interfaz web para SleepBear. Muestra estado online/offline con
+          detección de heartbeat real, última lectura de todos los sensores,
+          contadores de alertas por tipo, historial de últimas 5 alertas,
+          banner de datos desactualizados y control remoto con confirmación.
 INTEGRANTES: Aragón Guerrero Jacziry Berenice - 21240179
 PROYECTO: SleepBear - Sistema Inteligente de Monitoreo Nocturno para Bebés
 -->
@@ -12,216 +13,431 @@ PROYECTO: SleepBear - Sistema Inteligente de Monitoreo Nocturno para Bebés
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SleepBear — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0f1117; --card: #1a1d27; --border: #2a2d3e;
-      --green: #4ade80; --yellow: #fbbf24; --red: #f87171;
-      --blue: #60a5fa; --text: #e2e8f0; --muted: #64748b;
+      --bg:      #080b12; --surface: #0e1320; --card:   #131929;
+      --border:  #1e2740; --border2: #2a3554;
+      --green:   #22d473; --yellow:  #f5c147; --red:    #f05c6e;
+      --blue:    #5b9cf6; --purple:  #9b7fff; --orange: #fb923c;
+      --text:    #dce6f5; --muted:   #5a6a8a;
+      --mono:    'Space Mono', monospace;
+      --sans:    'DM Sans', sans-serif;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text);
-           font-family: "Segoe UI", sans-serif; padding: 24px; }
-    h1 { font-size: 1.8rem; margin-bottom: 4px; }
-    .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
-    .grid { display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px; }
-    .card { background: var(--card); border: 1px solid var(--border);
-            border-radius: 12px; padding: 20px; }
-    .card h3 { font-size: 0.72rem; text-transform: uppercase;
-               letter-spacing: 0.1em; color: var(--muted); margin-bottom: 10px; }
-    .valor { font-size: 2rem; font-weight: 700; }
-    .badge { display: inline-block; padding: 4px 12px;
-             border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
-    .online  { background: #14532d; color: var(--green); }
-    .offline { background: #450a0a; color: var(--red); }
-    .alerta-item { display: flex; justify-content: space-between;
-                   padding: 10px 0; border-bottom: 1px solid var(--border);
-                   font-size: 0.88rem; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); min-height: 100vh; overflow-x: hidden;
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 70% 50% at 10% 20%, rgba(91,156,246,.07) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 90% 80%, rgba(34,212,115,.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    main { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 24px 60px; }
+
+    /* ── HEADER ── */
+    header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+    .logo { width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg,#1e2f50,#0e1a30); border: 1px solid var(--border2); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+    .header-text h1 { font-family: var(--mono); font-size: 1.35rem; font-weight: 700; }
+    .header-text p { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+    .ts-global { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+    /* ── BADGE ONLINE ── */
+    .badge { display: inline-flex; align-items: center; gap: 7px; padding: 6px 14px; border-radius: 999px; font-family: var(--mono); font-size: 0.75rem; font-weight: 700; letter-spacing: .08em; transition: all .4s; }
+    .badge-dot { width: 7px; height: 7px; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.7)} }
+    .online  { background: rgba(34,212,115,.12); color: var(--green);  border: 1px solid rgba(34,212,115,.25); }
+    .online  .badge-dot { background: var(--green); }
+    .offline { background: rgba(240,92,110,.12);  color: var(--red);   border: 1px solid rgba(240,92,110,.25); }
+    .offline .badge-dot { background: var(--red); animation: none; opacity: .6; }
+    .stale   { background: rgba(245,193,71,.12);  color: var(--yellow); border: 1px solid rgba(245,193,71,.25); }
+    .stale   .badge-dot { background: var(--yellow); animation: none; }
+
+    /* ── MEJORA #5: BANNER DE DATOS DESACTUALIZADOS ── */
+    #banner-stale {
+      display: none;
+      background: rgba(245,193,71,.1); border: 1px solid rgba(245,193,71,.3);
+      border-radius: 10px; padding: 12px 18px; margin-bottom: 16px;
+      color: var(--yellow); font-size: 0.85rem;
+      align-items: center; gap: 10px;
+    }
+    #banner-stale.visible { display: flex; }
+    #banner-stale span { flex: 1; }
+
+    /* ── SECTION TITLE ── */
+    .sec-title { font-family: var(--mono); font-size: 0.7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 32px 0 14px; display: flex; align-items: center; gap: 10px; }
+    .sec-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── SENSOR GRID ── */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px; position: relative; overflow: hidden; transition: border-color .2s, transform .2s; }
+    .card:hover { border-color: var(--border2); transform: translateY(-1px); }
+    .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 14px 14px 0 0; background: linear-gradient(90deg,transparent,var(--border2),transparent); }
+    .card h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 12px; font-weight: 600; }
+    .valor { font-family: var(--mono); font-size: 1.9rem; font-weight: 700; line-height: 1; color: var(--text); }
+    .mini-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 4px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; }
+    .badge-fiebre { background: rgba(240,92,110,.15); color: var(--red); }
+    .badge-normal { background: rgba(34,212,115,.1);  color: var(--green); }
+    .badge-llanto { background: rgba(245,193,71,.15); color: var(--yellow); }
+
+    /* ── MEJORA #3: CONTADORES DE ALERTAS ── */
+    .contadores-row {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 4px;
+    }
+    .contador-card {
+      flex: 1; min-width: 120px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .contador-numero {
+      font-family: var(--mono); font-size: 2rem; font-weight: 700; line-height: 1;
+    }
+    .contador-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-top: 2px; }
+    .cnt-llanto .contador-numero { color: var(--yellow); }
+    .cnt-fiebre .contador-numero { color: var(--red); }
+    .cnt-calor  .contador-numero { color: var(--orange); }
+
+    /* ── CONTROL REMOTO ── */
+    .control-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+    .control-card h3 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 16px; font-weight: 600; }
+    .controles { display: flex; flex-wrap: wrap; gap: 10px; }
+    .btn { padding: 10px 18px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; font-family: var(--sans); font-weight: 600; font-size: 0.85rem; transition: all .15s; display: flex; align-items: center; gap: 7px; }
+    .btn:active { transform: scale(.97); }
+    .btn:hover  { filter: brightness(1.25); }
+    .btn-verde  { background: rgba(34,212,115,.1);  color: var(--green);  border-color: rgba(34,212,115,.25); }
+    .btn-rojo   { background: rgba(240,92,110,.1);  color: var(--red);    border-color: rgba(240,92,110,.25); }
+    .btn-azul   { background: rgba(91,156,246,.1);  color: var(--blue);   border-color: rgba(91,156,246,.25); }
+    .btn-fan    { background: rgba(155,127,255,.1); color: var(--purple); border-color: rgba(155,127,255,.25); }
+    .btn-apagar { background: rgba(90,106,138,.1);  color: var(--muted);  border-color: rgba(90,106,138,.2); }
+
+    /* ── CONFIRMACIÓN DE COMANDO (MEJORA #4) ── */
+    #confirm-cmd {
+      margin-top: 12px; padding: 10px 14px; border-radius: 8px;
+      background: rgba(34,212,115,.08); border: 1px solid rgba(34,212,115,.2);
+      font-size: 0.8rem; color: var(--green); display: none;
+      font-family: var(--mono);
+    }
+    #confirm-cmd.visible { display: block; }
+
+    /* ── ALERTAS ── */
+    .alertas-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 4px 0; overflow: hidden; }
+    .alerta-item { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); font-size: 0.85rem; transition: background .2s; }
     .alerta-item:last-child { border-bottom: none; }
-    .FIEBRE { color: var(--red); font-weight: 700; }
-    .LLANTO { color: var(--yellow); font-weight: 700; }
-    .CALOR  { color: var(--yellow); font-weight: 700; }
-    .controles { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
-    button { padding: 10px 18px; border: none; border-radius: 8px;
-             cursor: pointer; font-weight: 600; font-size: 0.9rem;
-             transition: opacity 0.2s; }
-    button:hover { opacity: 0.8; }
-    .btn-verde   { background: #14532d; color: var(--green); }
-    .btn-rojo    { background: #450a0a; color: var(--red); }
-    .btn-azul    { background: #1e3a5f; color: var(--blue); }
-    .btn-fan     { background: #312e81; color: #a5b4fc; }
-    .btn-apagar  { background: #1c1f2e; color: var(--muted); }
-    .sec-title { font-size: 1.1rem; font-weight: 700;
-                 margin: 28px 0 14px;
-                 border-left: 3px solid var(--blue);
-                 padding-left: 10px; }
+    .alerta-item:hover { background: rgba(255,255,255,.02); }
+    .alerta-tipo { font-family: var(--mono); font-size: 0.7rem; font-weight: 700; padding: 3px 9px; border-radius: 6px; min-width: 68px; text-align: center; }
+    .FIEBRE { background: rgba(240,92,110,.15); color: var(--red); }
+    .LLANTO { background: rgba(245,193,71,.15); color: var(--yellow); }
+    .CALOR  { background: rgba(251,146,60,.15); color: var(--orange); }
+    .alerta-valor { color: var(--muted); font-family: var(--mono); font-size: 0.78rem; flex: 1; }
+    .alerta-hora  { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+    .empty-msg { padding: 22px 18px; color: var(--muted); font-size: 0.85rem; }
+
+    /* ── DEBUG BASELINE (visible solo si existe el dato) ── */
+    #debug-baseline { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); margin-top: 6px; }
   </style>
 </head>
 <body>
+<main>
 
-<h1>🐻 SleepBear</h1>
-<p class="sub">Sistema de Monitoreo Nocturno — Dashboard en Tiempo Real</p>
+  <!-- HEADER -->
+  <header>
+    <div class="logo">🐻</div>
+    <div class="header-text">
+      <h1>SleepBear</h1>
+      <p>Sistema de Monitoreo Nocturno para Bebés</p>
+    </div>
+    <div class="header-right">
+      <span class="ts-global" id="ultima-ts"></span>
+      <span id="estado-sistema" class="badge offline">
+        <span class="badge-dot"></span>
+        <span id="estado-texto">Conectando...</span>
+      </span>
+    </div>
+  </header>
 
-<!-- Estado del sistema -->
-<div class="card" style="margin-bottom:16px; display:flex;
-     align-items:center; gap:12px;">
-  <span>Estado del sistema:</span>
-  <span id="estado-sistema" class="badge offline">Cargando...</span>
-  <span id="ultima-ts" style="color:var(--muted);font-size:0.8rem;
-        margin-left:auto;"></span>
-</div>
+  <!-- MEJORA #5: Banner de datos desactualizados -->
+  <div id="banner-stale">
+    <span>⚠️ Datos pueden estar desactualizados — el ESP32 lleva más de 2 minutos sin enviar señal.</span>
+  </div>
 
-<!-- Sensores -->
-<p class="sec-title">Últimas Lecturas de Sensores</p>
-<div class="grid">
-  <div class="card">
-    <h3>🌡️ Temp. Bebé (MLX90614)</h3>
-    <div class="valor" id="temp-bebe">--</div>
-    <div id="fiebre-badge" style="margin-top:8px;"></div>
+  <!-- SENSORES -->
+  <p class="sec-title">Últimas Lecturas</p>
+  <div class="grid">
+    <div class="card">
+      <h3>🌡️ Temp. Bebé</h3>
+      <div class="valor" id="temp-bebe">--</div>
+      <div id="fiebre-badge"></div>
+    </div>
+    <div class="card">
+      <h3>🏠 Temp. Cuarto</h3>
+      <div class="valor" id="temp-cuarto">--</div>
+    </div>
+    <div class="card">
+      <h3>💧 Humedad</h3>
+      <div class="valor" id="humedad">--</div>
+    </div>
+    <div class="card">
+      <h3>💡 Nivel de Luz</h3>
+      <div class="valor" id="luz">--</div>
+    </div>
+    <div class="card">
+      <h3>🎤 Sonido</h3>
+      <div class="valor" id="sonido">--</div>
+      <div id="llanto-badge"></div>
+      <!-- MEJORA #1: Muestra el baseline de ruido para debug -->
+      <div id="debug-baseline"></div>
+    </div>
+    <div class="card">
+      <h3>🔆 LED / Estado</h3>
+      <div class="valor" id="led-estado">--</div>
+    </div>
+    <div class="card">
+      <h3>🤖 Postura (IA)</h3>
+      <div class="valor" id="postura-ia" style="font-size:1.1rem">--</div>
+    </div>
   </div>
-  <div class="card">
-    <h3>🏠 Temp. Cuarto (DHT11)</h3>
-    <div class="valor" id="temp-cuarto">--</div>
-  </div>
-  <div class="card">
-    <h3>💧 Humedad (DHT11)</h3>
-    <div class="valor" id="humedad">--</div>
-  </div>
-  <div class="card">
-    <h3>💡 Nivel de Luz (LDR)</h3>
-    <div class="valor" id="luz">--</div>
-  </div>
-  <div class="card">
-    <h3>🎤 Sonido (KY-037)</h3>
-    <div class="valor" id="sonido">--</div>
-    <div id="llanto-badge" style="margin-top:8px;"></div>
-  </div>
-  <div class="card">
-    <h3>💡 LED / Estado</h3>
-    <div class="valor" id="led-estado">--</div>
-  </div>
-</div>
 
-<!-- Control remoto -->
-<p class="sec-title">Control Remoto de Actuadores</p>
-<div class="card">
-  <h3>ENVIAR COMANDO AL ESP32</h3>
-  <div class="controles">
-    <button class="btn-verde"
-      onclick="enviarComando({color:'verde'})">✅ LED Verde</button>
-    <button class="btn-rojo"
-      onclick="enviarComando({color:'rojo'})">🚨 LED Rojo</button>
-    <button class="btn-azul"
-      onclick="enviarComando({accion:'reproducir',pista:1})">🎵 Música</button>
-    <button class="btn-fan"
-      onclick="enviarComando({activar:true})">💨 Ventilador ON</button>
-    <button class="btn-apagar"
-      onclick="enviarComando({accion:'detener'})">⏹ Apagar Todo</button>
+  <!-- CONTROL REMOTO -->
+  <p class="sec-title">Control Remoto</p>
+  <div class="control-card">
+    <h3>Enviar comando al ESP32</h3>
+    <div class="controles">
+      <button class="btn btn-verde"  onclick="enviarComando({color:'verde'},   this)">✅ LED Verde</button>
+      <button class="btn btn-rojo"   onclick="enviarComando({color:'rojo'},    this)">🚨 LED Rojo</button>
+      <button class="btn btn-azul"   onclick="enviarComando({accion:'reproducir',pista:1}, this)">🎵 Música</button>
+      <button class="btn btn-fan"    onclick="enviarComando({activar:true},    this)">💨 Ventilador ON</button>
+      <button class="btn btn-apagar" onclick="enviarComando({activar:false},   this)">🌀 Ventilador OFF</button>
+      <button class="btn btn-apagar" onclick="enviarComando({accion:'detener'},this)">⏹ Detener Audio</button>
+    </div>
+    <!-- MEJORA #4: Confirmación de comando ejecutado -->
+    <div id="confirm-cmd"></div>
   </div>
-</div>
 
-<!-- Historial de alertas -->
-<p class="sec-title">Últimas 5 Alertas</p>
-<div class="card">
-  <div id="lista-alertas">
-    <p style="color:var(--muted);font-size:0.85rem;">Sin alertas aún...</p>
+  <!-- MEJORA #3: Contadores de alertas -->
+  <p class="sec-title">Resumen de Alertas</p>
+  <div class="contadores-row">
+    <div class="contador-card cnt-llanto">
+      <div>
+        <div class="contador-numero" id="cnt-llanto">0</div>
+        <div class="contador-label">Llantos</div>
+      </div>
+      <span style="font-size:1.6rem;margin-left:auto">😢</span>
+    </div>
+    <div class="contador-card cnt-fiebre">
+      <div>
+        <div class="contador-numero" id="cnt-fiebre">0</div>
+        <div class="contador-label">Fiebres</div>
+      </div>
+      <span style="font-size:1.6rem;margin-left:auto">🌡️</span>
+    </div>
+    <div class="contador-card cnt-calor">
+      <div>
+        <div class="contador-numero" id="cnt-calor">0</div>
+        <div class="contador-label">Alertas Calor</div>
+      </div>
+      <span style="font-size:1.6rem;margin-left:auto">🔥</span>
+    </div>
   </div>
-</div>
 
-<!-- Firebase SDK -->
+  <!-- HISTORIAL -->
+  <p class="sec-title">Últimas 5 Alertas</p>
+  <div class="alertas-card">
+    <div id="lista-alertas">
+      <p class="empty-msg">Sin alertas registradas aún...</p>
+    </div>
+  </div>
+
+</main>
+
 <script type="module">
   import { initializeApp }
     from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
   import { getDatabase, ref, onValue, set }
     from "https://www.gstatic.com/firebasejs/10.11.0/firebase-database.js";
 
-  // ── REEMPLAZA CON TU CONFIGURACIÓN DE FIREBASE ──────────────
- const firebaseConfig = {
-  apiKey: "AIzaSyA_RiXm24mARyCTKcOqIk4Rjwu2QoTXIOU",
-  authDomain: "sleepbear-95f3e.firebaseapp.com",
-  databaseURL: "https://sleepbear-95f3e-default-rtdb.firebaseio.com",
-  projectId: "sleepbear-95f3e",
-  storageBucket: "sleepbear-95f3e.firebasestorage.app",
-  messagingSenderId: "1038238689309",
-  appId: "1:1038238689309:web:33b6ee5f349d9733a17ef4"
-};
-  // ─────────────────────────────────────────────────────────────
+  const firebaseConfig = {
+    apiKey:            "AIzaSyA_RiXm24mARyCTKcOqIk4Rjwu2QoTXIOU",
+    authDomain:        "sleepbear-95f3e.firebaseapp.com",
+    databaseURL:       "https://sleepbear-95f3e-default-rtdb.firebaseio.com",
+    projectId:         "sleepbear-95f3e",
+    storageBucket:     "sleepbear-95f3e.firebasestorage.app",
+    messagingSenderId: "1038238689309",
+    appId:             "1:1038238689309:web:33b6ee5f349d9733a17ef4"
+  };
 
   const app      = initializeApp(firebaseConfig);
-  const database = getDatabase(app);
+  const db       = getDatabase(app);
 
-  // Estado online/offline del sistema
-  onValue(ref(database, "sistema/online"), snap => {
-    const online = snap.val();
-    const badge  = document.getElementById("estado-sistema");
-    badge.textContent = online ? "ONLINE" : "OFFLINE";
-    badge.className   = "badge " + (online ? "online" : "offline");
+  // ── MEJORA #2: Heartbeat — detector de señal del ESP32 ──────────────────
+  // Compara el timestamp del heartbeat con la hora actual del navegador.
+  // Si pasaron más de 2 minutos → modo "sin señal".
+  // NOTA: el ESP32 escribe ts_iso() basado en ticks desde el boot (sin RTC),
+  // así que no podemos comparar fechas reales. En su lugar comparamos cuándo
+  // *nosotros* recibimos el último valor del nodo heartbeat.
+  let ultimoHeartbeatLocal = null;   // Date.now() cuando llegó el último HB
+  const STALE_MS = 2 * 60 * 1000;   // 2 minutos
+
+  onValue(ref(db, "sistema/heartbeat"), snap => {
+    if (snap.val()) {
+      ultimoHeartbeatLocal = Date.now();
+      // Limpiar banner si estaba activo
+      document.getElementById("banner-stale").classList.remove("visible");
+    }
   });
 
-  // Última telemetría — actualiza en tiempo real
-  onValue(ref(database, "telemetria/ultima"), snap => {
-    const d = snap.val();
-    if (!d) return;
+  // Revisar cada 30s si el heartbeat lleva mucho sin actualizarse
+  setInterval(() => {
+    if (ultimoHeartbeatLocal === null) return;
+    const diff = Date.now() - ultimoHeartbeatLocal;
+    const badge  = document.getElementById("estado-sistema");
+    const texto  = document.getElementById("estado-texto");
+    const banner = document.getElementById("banner-stale");
+
+    if (diff > STALE_MS) {
+      // MEJORA #5: banner amarillo de datos desactualizados
+      banner.classList.add("visible");
+      badge.className  = "badge stale";
+      texto.textContent = "SIN SEÑAL";
+    }
+  }, 30_000);
+
+  // ── ONLINE/OFFLINE (con heartbeat como fuente de verdad) ────────────────
+  onValue(ref(db, "sistema/online"), snap => {
+    const val   = snap.val();
+    const badge = document.getElementById("estado-sistema");
+    const texto = document.getElementById("estado-texto");
+    // Solo actualizar si no estamos en modo stale
+    if (!document.getElementById("banner-stale").classList.contains("visible")) {
+      if (val === true) {
+        badge.className   = "badge online";
+        texto.textContent = "ONLINE";
+      } else if (val === false) {
+        badge.className   = "badge offline";
+        texto.textContent = "OFFLINE";
+      } else {
+        badge.className   = "badge offline";
+        texto.textContent = "Sin datos";
+      }
+    }
+  });
+
+  // ── TELEMETRÍA ───────────────────────────────────────────────────────────
+  onValue(ref(db, "telemetria/ultima"), snap => {
+    const d = snap.val(); if (!d) return;
     document.getElementById("temp-bebe").textContent =
-      d.temperatura_bebe != null ? d.temperatura_bebe + "°C" : "--";
+      d.temperatura_bebe   != null ? d.temperatura_bebe   + "°C" : "--";
     document.getElementById("temp-cuarto").textContent =
       d.temperatura_cuarto != null ? d.temperatura_cuarto + "°C" : "--";
     document.getElementById("humedad").textContent =
-      d.humedad_cuarto != null ? d.humedad_cuarto + "%" : "--";
+      d.humedad_cuarto     != null ? d.humedad_cuarto     + "%"  : "--";
     document.getElementById("luz").textContent =
-      d.nivel_luz != null ? parseFloat(d.nivel_luz).toFixed(1) + "%" : "--";
+      d.nivel_luz          != null ? d.nivel_luz                 : "--";
     document.getElementById("sonido").textContent =
-      d.nivel_sonido != null ? parseFloat(d.nivel_sonido).toFixed(1) + "%" : "--";
+      d.nivel_sonido       != null ? parseFloat(d.nivel_sonido).toFixed(1) + "%" : "--";
+
     document.getElementById("fiebre-badge").innerHTML = d.hay_fiebre
-      ? '<span class="badge" style="background:#450a0a;color:#f87171">🔥 Fiebre</span>'
-      : '<span class="badge" style="background:#14532d;color:#4ade80">Normal</span>';
+      ? '<span class="mini-badge badge-fiebre">🔥 Fiebre</span>'
+      : '<span class="mini-badge badge-normal">✓ Normal</span>';
     document.getElementById("llanto-badge").innerHTML = d.llanto_detectado
-      ? '<span class="badge" style="background:#422006;color:#fbbf24">😢 Llanto</span>'
-      : "";
+      ? '<span class="mini-badge badge-llanto">😢 Llanto</span>' : "";
+
+    // MEJORA #1: mostrar baseline del umbral adaptativo (debug llanto)
+    const bl = document.getElementById("debug-baseline");
+    if (d.baseline_sonido != null) {
+      const umbral = Math.max(parseFloat(d.baseline_sonido) * 1.8, 25).toFixed(1);
+      bl.textContent = `baseline=${d.baseline_sonido}% → umbral=${umbral}%`;
+    }
+
     const ts = d.ts ? new Date(d.ts).toLocaleTimeString("es-MX") : "";
-    document.getElementById("ultima-ts").textContent =
-      ts ? "Actualizado: " + ts : "";
+    document.getElementById("ultima-ts").textContent = ts ? "Act. " + ts : "";
   });
 
-  // Estado del LED
-  onValue(ref(database, "actuadores/estado"), snap => {
-    const d = snap.val();
-    if (!d) return;
-    const colores = {verde:"#4ade80",rojo:"#f87171",
-                     amarillo:"#fbbf24",azul:"#60a5fa"};
-    const led = document.getElementById("led-estado");
-    led.textContent = d.led ? d.led.toUpperCase() : "--";
-    led.style.color = colores[d.led] || "#e2e8f0";
+  // ── LED ──────────────────────────────────────────────────────────────────
+  const coloresLed = { verde:"#22d473", rojo:"#f05c6e", amarillo:"#f5c147", azul:"#5b9cf6" };
+  onValue(ref(db, "actuadores/estado"), snap => {
+    const d = snap.val(); if (!d) return;
+    const el = document.getElementById("led-estado");
+    el.textContent = d.led ? d.led.toUpperCase() : "--";
+    el.style.color = coloresLed[d.led] || "var(--text)";
   });
 
-  // Historial de alertas — últimas 5
-  onValue(ref(database, "alertas"), snap => {
+  // ── MEJORA #4: Confirmación de comando ejecutado ─────────────────────────
+  // El ESP32 escribe en actuadores/confirmacion después de ejecutar el cmd.
+  onValue(ref(db, "actuadores/confirmacion"), snap => {
+    const d = snap.val(); if (!d) return;
+    const box  = document.getElementById("confirm-cmd");
+    const cmd  = JSON.stringify(d.cmd || d);
+    const hora = d.ts ? " · " + d.ts : "";
+    box.textContent = `✓ Ejecutado: ${cmd}${hora}`;
+    box.classList.add("visible");
+    setTimeout(() => box.classList.remove("visible"), 5000);
+  });
+
+  // ── MEJORA #3: Contadores de alertas ────────────────────────────────────
+  onValue(ref(db, "alertas/contadores"), snap => {
+    const d = snap.val() || {};
+    document.getElementById("cnt-llanto").textContent = d.LLANTO || 0;
+    document.getElementById("cnt-fiebre").textContent = d.FIEBRE || 0;
+    document.getElementById("cnt-calor").textContent  = d.CALOR  || 0;
+  });
+
+  // ── HISTORIAL DE ALERTAS ─────────────────────────────────────────────────
+  // FIX: las claves son timestamps "20240607_123456_789" — se ordenan por
+  // clave (orden lexicográfico = orden cronológico) y no por a.ts, evitando
+  // errores cuando ts es null o tiene formato inconsistente.
+  onValue(ref(db, "alertas/historial"), snap => {
     const data  = snap.val();
     const lista = document.getElementById("lista-alertas");
     if (!data) {
-      lista.innerHTML =
-        '<p style="color:var(--muted);font-size:0.85rem;">Sin alertas.</p>';
+      lista.innerHTML = '<p class="empty-msg">Sin alertas registradas aún...</p>';
       return;
     }
-    const alertas = Object.values(data)
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
-      .slice(0, 5);
+    const alertas = Object.entries(data)
+      .sort((a, b) => b[0] > a[0] ? 1 : -1)   // ordenar por clave desc
+      .slice(0, 5)
+      .map(([, v]) => v);
     lista.innerHTML = alertas.map(a => {
-      const hora = new Date(a.ts).toLocaleTimeString("es-MX");
+      let hora = "--";
+      if (a.ts) {
+        try { hora = new Date(a.ts).toLocaleTimeString("es-MX"); } catch(e) { hora = a.ts; }
+      }
+      const val  = a.valor != null ? parseFloat(a.valor).toFixed(1) : "";
+      const tipo = a.tipo  || "?";
       return `<div class="alerta-item">
-        <span class="${a.tipo}">${a.tipo}</span>
-        <span style="color:var(--muted)">${a.valor ?? ""}</span>
-        <span style="color:var(--muted);font-size:0.78rem">${hora}</span>
+        <span class="alerta-tipo ${tipo}">${tipo}</span>
+        <span class="alerta-valor">${val}</span>
+        <span class="alerta-hora">${hora}</span>
       </div>`;
     }).join("");
   });
 
-  // Enviar comando remoto al ESP32 vía Firebase
-  // El servidor_firebase.py detecta el cambio y lo reenvía por MQTT
-  window.enviarComando = function(cmd) {
-    set(ref(database, "actuadores/comando_remoto"), cmd)
-      .then(() => console.log("Comando enviado:", cmd))
+  // ── POSTURA / MODELO IA ──────────────────────────────────────────────────
+  // El servidor_ia.py escribe en "ia/postura" con { resultado, ts }
+  onValue(ref(db, "ia/postura"), snap => {
+    const d = snap.val();
+    const el = document.getElementById("postura-ia");
+    if (!el) return;
+    if (!d) { el.textContent = "--"; return; }
+    const colores = { SEGURO: "#22d473", RIESGO: "#f05c6e", INDETERMINADO: "#f5c147" };
+    el.textContent  = d.resultado || "--";
+    el.style.color  = colores[d.resultado] || "var(--text)";
+  });
+
+  // ── CONTROL REMOTO ───────────────────────────────────────────────────────
+  // Escribe en Firebase → el ESP32 lo lee con leer_comandos_firebase() cada 10s.
+  // Cuando hay servidor_firebase.py en la PC, él lo reenvía por MQTT de inmediato.
+  window.enviarComando = function(cmd, btn) {
+    set(ref(db, "actuadores/comando_remoto"), cmd)
+      .then(() => {
+        if (btn) { btn.style.opacity = ".5"; setTimeout(() => btn.style.opacity = "1", 600); }
+        console.log("Comando enviado:", cmd);
+      })
       .catch(e => console.error("Error:", e));
   };
 </script>
